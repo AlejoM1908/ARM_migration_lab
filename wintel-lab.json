@@ -1,0 +1,486 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "TargetDeploymentZone": {
+            "type": "string",
+            "metadata": {
+                "description": "The Azure region where the target resources will be deployed."
+            }
+        },
+        "SourceDeploymentZone": {
+            "type": "string",
+            "metadata": {
+                "description": "The Azure region where the source resources will be deployed."
+            }
+        },
+        "adminUsername": {
+            "type": "string",
+            "metadata": {
+                "description": "Admin username for the VMs."
+            }
+        },
+        "MigrationServPassword": {
+            "type": "secureString",
+            "metadata": {
+                "description": "Password for the MigrationServ VM."
+            }
+        },
+        "TargetDCPassword": {
+            "type": "secureString",
+            "metadata": {
+                "description": "Password for the TargetDC VM."
+            }
+        },
+        "SourceDCPassword": {
+            "type": "secureString",
+            "metadata": {
+                "description": "Password for the SourceDC VM."
+            }
+        },
+        "WorkstationWin11Password": {
+            "type": "secureString",
+            "metadata": {
+                "description": "Password for the WorkstationWin11 VM."
+            }
+        },
+        "DomainConfigURL": {
+            "type": "string",
+            "metadata": {
+                "description": "URL to the domain configuration script."
+            }
+        },
+        "DeviceRegistrationURL": {
+            "type": "string",
+            "metadata": {
+                "description": "URL to the device registration script."
+            }
+        }
+    },
+    "resources": [
+        {
+            "type": "Microsoft.Network/virtualNetworks",
+            "apiVersion": "2020-11-01",
+            "name": "targetVnet",
+            "location": "[parameters('TargetDeploymentZone')]",
+            "properties": {
+                "addressSpace": {
+                    "addressPrefixes": [
+                        "10.0.0.0/24"
+                    ]
+                },
+                "subnets": [
+                    {
+                        "name": "targetSubnet",
+                        "properties": {
+                            "addressPrefix": "10.0.0.0/28"
+                        }
+                    }
+                ],
+                "virtualNetworkPeerings": [
+                    {
+                        "name": "targetToSource",
+                        "properties": {
+                            "allowVirtualNetworkAccess": true,
+                            "remoteVirtualNetwork": {
+                                "id": "[resourceId('Microsoft.Network/virtualNetworks', 'sourceVnet')]"
+                            }
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "type": "Microsoft.Network/virtualNetworks",
+            "apiVersion": "2020-11-01",
+            "name": "sourceVnet",
+            "location": "[parameters('SourceDeploymentZone')]",
+            "properties": {
+                "addressSpace": {
+                    "addressPrefixes": [
+                        "10.0.1.0/24"
+                    ]
+                },
+                "subnets": [
+                    {
+                        "name": "sourceSubnet",
+                        "properties": {
+                            "addressPrefix": "10.0.1.0/28"
+                        }
+                    }
+                ],
+                "virtualNetworkPeerings": [
+                    {
+                        "name": "sourceToTarget",
+                        "properties": {
+                            "allowVirtualNetworkAccess": true,
+                            "remoteVirtualNetwork": {
+                                "id": "[resourceId('Microsoft.Network/virtualNetworks', 'targetVnet')]"
+                            }
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "type": "Microsoft.Network/publicIPAddresses",
+            "apiVersion": "2020-11-01",
+            "name": "MigrationServ-IP",
+            "location": "[parameters('TargetDeploymentZone')]",
+            "properties": {
+                "publicIPAllocationMethod": "Static"
+            }
+        },
+        {
+            "type": "Microsoft.Network/networkInterfaces",
+            "apiVersion": "2020-11-01",
+            "name": "MigrationServ-NIC",
+            "location": "[parameters('TargetDeploymentZone')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Network/publicIPAddresses', 'MigrationServ-IP')]"
+            ],
+            "properties": {
+                "ipConfigurations": [
+                    {
+                        "name": "MigrationServ-IPConfig",
+                        "properties": {
+                            "subnet": {
+                                "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets', 'targetVnet', 'targetSubnet')]"
+                            },
+                            "privateIPAllocationMethod": "static",
+                            "privateIPAddress": "10.0.0.5",
+                            "publicIPAddress": {
+                                "id": "[resourceId('Microsoft.Network/publicIPAddresses', 'MigrationServ-IP')]"
+                            }
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "type": "Microsoft.Network/networkInterfaces",
+            "apiVersion": "2020-11-01",
+            "name": "TargetDC-NIC",
+            "location": "[parameters('TargetDeploymentZone')]",
+            "properties": {
+                "ipConfigurations": [
+                    {
+                        "name": "TargetDC-IPConfig",
+                        "properties": {
+                            "subnet": {
+                                "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets', 'targetVnet', 'targetSubnet')]"
+                            },
+                            "privateIPAllocationMethod": "static",
+                            "privateIPAddress": "10.0.0.4"
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "type": "Microsoft.Network/networkInterfaces",
+            "apiVersion": "2020-11-01",
+            "name": "SourceDC-NIC",
+            "location": "[parameters('SourceDeploymentZone')]",
+            "properties": {
+                "ipConfigurations": [
+                    {
+                        "name": "SourceDC-IPConfig",
+                        "properties": {
+                            "subnet": {
+                                "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets', 'sourceVnet', 'sourceSubnet')]"
+                            },
+                            "privateIPAllocationMethod": "static",
+                            "privateIPAddress": "10.0.1.4"
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "type": "Microsoft.Network/networkInterfaces",
+            "apiVersion": "2020-11-01",
+            "name": "WorkstationWin11-NIC",
+            "location": "[parameters('SourceDeploymentZone')]",
+            "properties": {
+                "ipConfigurations": [
+                    {
+                        "name": "WorkstationWin11-IPConfig",
+                        "properties": {
+                            "subnet": {
+                                "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets', 'sourceVnet', 'sourceSubnet')]"
+                            },
+                            "privateIPAllocationMethod": "static",
+                            "privateIPAddress": "10.0.1.5"
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "type": "Microsoft.Network/networkSecurityGroups",
+            "apiVersion": "2020-11-01",
+            "name": "TargetNSG",
+            "location": "[parameters('TargetDeploymentZone')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Network/virtualNetworks', 'targetVnet')]"
+            ],
+            "properties": {
+                "securityRules": [
+                    {
+                        "name": "AllowRDP",
+                        "properties": {
+                            "protocol": "Tcp",
+                            "sourcePortRange": "*",
+                            "destinationPortRange": "3389",
+                            "sourceAddressPrefix": "*",
+                            "destinationAddressPrefix": "*",
+                            "access": "Allow",
+                            "priority": 100,
+                            "direction": "Inbound"
+                        }
+                    }
+                ],
+                "networkInterfaces": [
+                    {
+                        "id": "[resourceId('Microsoft.Network/networkInterfaces', 'MigrationServ-NIC', 'TargetDC-NIC')]"
+                    }
+                ]
+            }
+        },
+        {
+            "type": "Microsoft.Network/networkSecurityGroups",
+            "apiVersion": "2020-11-01",
+            "name": "SourceNSG",
+            "location": "[parameters('SourceDeploymentZone')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Network/virtualNetworks', 'sourceVnet')]"
+            ],
+            "properties": {
+                "securityRules": [
+                    {
+                        "name": "AllowRDP",
+                        "properties": {
+                            "protocol": "Tcp",
+                            "sourcePortRange": "*",
+                            "destinationPortRange": "3389",
+                            "sourceAddressPrefix": "*",
+                            "destinationAddressPrefix": "*",
+                            "access": "Allow",
+                            "priority": 100,
+                            "direction": "Inbound"
+                        }
+                    }
+                ],
+                "networkInterfaces": [
+                    {
+                        "id": "[resourceId('Microsoft.Network/networkInterfaces', 'SourceDC-NIC', 'WorkstationWin11-NIC')]"
+                    }
+                ]
+            }
+        },
+        {
+            "type": "Microsoft.Compute/virtualMachines",
+            "apiVersion": "2020-12-01",
+            "name": "MigrationServ",
+            "location": "[parameters('TargetDeploymentZone')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Network/networkInterfaces', 'MigrationServ-NIC')]",
+                "[resourceId('Microsoft.Network/networkSecurityGroups', 'TargetNSG')]",
+                "[resourceId('Microsoft.Compute/virtualMachines/extensions', 'TargetDC', 'TargetDC-ADDS')]"
+            ],
+            "tags": {
+                "role": "Migration Server",
+                "role2": "Jump Server"
+            },
+            "properties": {
+                "hardwareProfile": {
+                    "vmSize": "Standard_B2s"
+                },
+                "storageProfile": {
+                    "imageReference": {
+                        "publisher": "MicrosoftWindowsServer",
+                        "offer": "WindowsServer",
+                        "sku": "2022-Datacenter",
+                        "version": "latest"
+                    },
+                    "osDisk": {
+                        "createOption": "FromImage",
+                        "managedDisk": {
+                            "storageAccountType": "Standard_LRS",
+                            "diskSizeGB": 128,
+                            "tier": "Standard"
+                        }
+                    }
+                },
+                "osProfile": {
+                    "computerName": "MigrationServ",
+                    "adminUsername": "[parameters('adminUsername')]",
+                    "adminPassword": "[parameters('MigrationServPassword')]"
+                },
+                "networkProfile": {
+                    "networkInterfaces": [
+                        {
+                            "id": "[resourceId('Microsoft.Network/networkInterfaces', 'MigrationServ-NIC')]"
+                        }
+                    ]
+                }
+            }
+        },
+        {
+            "type": "Microsoft.Compute/virtualMachines",
+            "apiVersion": "2020-12-01",
+            "name": "TargetDC",
+            "location": "[parameters('TargetDeploymentZone')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Network/networkInterfaces', 'TargetDC-NIC')]",
+                "[resourceId('Microsoft.Network/networkSecurityGroups', 'TargetNSG')]"
+            ],
+            "tags": {
+                "role": "ADDS Server"
+            },
+            "properties": {
+                "hardwareProfile": {
+                    "vmSize": "Standard_B2s"
+                },
+                "storageProfile": {
+                    "imageReference": {
+                        "publisher": "MicrosoftWindowsServer",
+                        "offer": "WindowsServer",
+                        "sku": "2019-Datacenter",
+                        "version": "latest"
+                    },
+                    "osDisk": {
+                        "createOption": "FromImage",
+                        "managedDisk": {
+                            "storageAccountType": "Standard_LRS",
+                            "diskSizeGB": 128,
+                            "tier": "Standard"
+                        }
+                    }
+                },
+                "osProfile": {
+                    "computerName": "TargetDC",
+                    "adminUsername": "[parameters('adminUsername')]",
+                    "adminPassword": "[parameters('TargetDCPassword')]"
+                },
+                "networkProfile": {
+                    "networkInterfaces": [
+                        {
+                            "id": "[resourceId('Microsoft.Network/networkInterfaces', 'TargetDC-NIC')]"
+                        }
+                    ]
+                }
+            }
+        },
+        {
+            "type": "Microsoft.Compute/virtualMachines",
+            "apiVersion": "2020-12-01",
+            "name": "SourceDC",
+            "location": "[parameters('SourceDeploymentZone')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Network/networkInterfaces', 'SourceDC-NIC')]",
+                "[resourceId('Microsoft.Network/networkSecurityGroups', 'SourceNSG')]"
+            ],
+            "tags": {
+                "role": "ADDS Server"
+            },
+            "properties": {
+                "hardwareProfile": {
+                    "vmSize": "Standard_B2s"
+                },
+                "storageProfile": {
+                    "imageReference": {
+                        "publisher": "MicrosoftWindowsServer",
+                        "offer": "WindowsServer",
+                        "sku": "2019-Datacenter",
+                        "version": "latest"
+                    },
+                    "osDisk": {
+                        "createOption": "FromImage",
+                        "managedDisk": {
+                            "storageAccountType": "Standard_LRS",
+                            "diskSizeGB": 128,
+                            "tier": "Standard"
+                        }
+                    }
+                },
+                "osProfile": {
+                    "computerName": "SourceDC",
+                    "adminUsername": "[parameters('adminUsername')]",
+                    "adminPassword": "[parameters('SourceDCPassword')]"
+                },
+                "networkProfile": {
+                    "networkInterfaces": [
+                        {
+                            "id": "[resourceId('Microsoft.Network/networkInterfaces', 'SourceDC-NIC')]"
+                        }
+                    ]
+                }
+            }
+        },
+        {
+            "type": "Microsoft.Compute/virtualMachines",
+            "apiVersion": "2020-12-01",
+            "name": "WorkstationWin11",
+            "location": "[parameters('SourceDeploymentZone')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Network/networkInterfaces', 'WorkstationWin11-NIC')]",
+                "[resourceId('Microsoft.Network/networkSecurityGroups', 'SourceNSG')]"
+            ],
+            "tags": {
+                "role": "Workstation"
+            },
+            "properties": {
+                "hardwareProfile": {
+                    "vmSize": "Standard_B1s"
+                },
+                "storageProfile": {
+                    "imageReference": {
+                        "publisher": "MicrosoftWindowsDesktop",
+                        "offer": "Windows-10",
+                        "sku": "20h2-evd",
+                        "version": "latest"
+                    },
+                    "osDisk": {
+                        "createOption": "FromImage",
+                        "managedDisk": {
+                            "storageAccountType": "Standard_LRS",
+                            "diskSizeGB": 128,
+                            "tier": "Standard"
+                        }
+                    }
+                },
+                "osProfile": {
+                    "computerName": "WorkstationWin11",
+                    "adminUsername": "[parameters('adminUsername')]",
+                    "adminPassword": "[parameters('WorkstationWin11Password')]"
+                },
+                "networkProfile": {
+                    "networkInterfaces": [
+                        {
+                            "id": "[resourceId('Microsoft.Network/networkInterfaces', 'WorkstationWin11-NIC')]"
+                        }
+                    ]
+                }
+            }
+        },
+        {
+            "type": "Microsoft.Compute/virtualMachines/extensions",
+            "apiVersion": "2020-12-01",
+            "name": "TargetDC/TargetDC-ADDS",
+            "location": "[parameters('TargetDeploymentZone')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Compute/virtualMachines', 'TargetDC')]"
+            ],
+            "properties": {
+                "publisher": "Microsoft.Compute",
+                "type": "CustomScriptExtension",
+                "typeHandlerVersion": "1.10",
+                "autoUpgradeMinorVersion": true,
+                "settings": {},
+                "protectedSettings": {}
+            }
+        }
+    ]
+}
