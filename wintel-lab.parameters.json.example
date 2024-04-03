@@ -1,0 +1,36 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "TargetDeploymentZone": {
+            "value": "eastus"
+        },
+        "SourceDeploymentZone": {
+            "value": "eastus2"
+        },
+        "adminUsername": {
+            "value": "adminUsername"
+        },
+        "MigrationServPassword": {
+            "value": "MigrationServPassword"
+        },
+        "TargetDCPassword": {
+            "value": "TargetDCPassword"
+        },
+        "SourceDCPassword": {
+            "value": "SourceDCPassword"
+        },
+        "WorkstationWin11Password": {
+            "value": "WorkstationWin11Password"
+        },
+        "DomainConfigURL": {
+            "value": "URL-to-script"
+        },
+        "DeviceRegistrationURL": {
+            "value": "URL-to-script"
+        },
+        "TrustRelationshipURL": {
+            "value": "Url-to-script"
+        }
+    }
+}

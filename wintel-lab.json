@@ -43,18 +43,6 @@
             "metadata": {
                 "description": "Password for the WorkstationWin11 VM."
             }
-        },
-        "DomainConfigURL": {
-            "type": "string",
-            "metadata": {
-                "description": "URL to the domain configuration script."
-            }
-        },
-        "DeviceRegistrationURL": {
-            "type": "string",
-            "metadata": {
-                "description": "URL to the device registration script."
-            }
         }
     },
     "resources": [
@@ -74,17 +62,6 @@
                         "name": "targetSubnet",
                         "properties": {
                             "addressPrefix": "10.0.0.0/28"
-                        }
-                    }
-                ],
-                "virtualNetworkPeerings": [
-                    {
-                        "name": "targetToSource",
-                        "properties": {
-                            "allowVirtualNetworkAccess": true,
-                            "remoteVirtualNetwork": {
-                                "id": "[resourceId('Microsoft.Network/virtualNetworks', 'sourceVnet')]"
-                            }
                         }
                     }
                 ]
@@ -108,18 +85,26 @@
                             "addressPrefix": "10.0.1.0/28"
                         }
                     }
-                ],
-                "virtualNetworkPeerings": [
-                    {
-                        "name": "sourceToTarget",
-                        "properties": {
-                            "allowVirtualNetworkAccess": true,
-                            "remoteVirtualNetwork": {
-                                "id": "[resourceId('Microsoft.Network/virtualNetworks', 'targetVnet')]"
-                            }
-                        }
-                    }
                 ]
+            }
+        },
+        {
+            "apiVersion": "2020-11-01",
+            "type": "Microsoft.Network/virtualnetworks/virtualNetworkPeerings",
+            "name": "[concat('sourceVnet/', 'Backbone-Peering')]",
+            "location": "[parameters('SourceDeploymentZone')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Network/virtualNetworks', 'sourceVnet')]",
+                "[resourceId('Microsoft.Network/virtualNetworks', 'targetVnet')]"
+            ],
+            "properties": {
+                "allowVirtualNetworkAccess": true,
+                "allowForwardedTraffic": false,
+                "allowGatewayTransit": false,
+                "useRemoteGateways": false,
+                "remoteVirtualNetwork": {
+                    "id": "[resourceId('TargetResourceGroup', 'Microsoft.Network/virtualNetworks', 'targetVnet')]"
+                }
             }
         },
         {
@@ -137,6 +122,8 @@
             "name": "MigrationServ-NIC",
             "location": "[parameters('TargetDeploymentZone')]",
             "dependsOn": [
+                "[resourceId('Microsoft.Network/virtualNetworks', 'targetVnet')]",
+                "[resourceId('Microsoft.Network/virtualNetworks', 'sourceVnet')]",
                 "[resourceId('Microsoft.Network/publicIPAddresses', 'MigrationServ-IP')]"
             ],
             "properties": {
@@ -162,6 +149,10 @@
             "apiVersion": "2020-11-01",
             "name": "TargetDC-NIC",
             "location": "[parameters('TargetDeploymentZone')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Network/virtualNetworks', 'targetVnet')]",
+                "[resourceId('Microsoft.Network/virtualNetworks', 'sourceVnet')]"
+            ],
             "properties": {
                 "ipConfigurations": [
                     {
@@ -182,6 +173,10 @@
             "apiVersion": "2020-11-01",
             "name": "SourceDC-NIC",
             "location": "[parameters('SourceDeploymentZone')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Network/virtualNetworks', 'targetVnet')]",
+                "[resourceId('Microsoft.Network/virtualNetworks', 'sourceVnet')]"
+            ],
             "properties": {
                 "ipConfigurations": [
                     {
@@ -202,6 +197,10 @@
             "apiVersion": "2020-11-01",
             "name": "WorkstationWin11-NIC",
             "location": "[parameters('SourceDeploymentZone')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Network/virtualNetworks', 'targetVnet')]",
+                "[resourceId('Microsoft.Network/virtualNetworks', 'sourceVnet')]"
+            ],
             "properties": {
                 "ipConfigurations": [
                     {
@@ -223,6 +222,8 @@
             "name": "TargetNSG",
             "location": "[parameters('TargetDeploymentZone')]",
             "dependsOn": [
+                "[resourceId('Microsoft.Network/networkInterfaces', 'MigrationServ-NIC')]",
+                "[resourceId('Microsoft.Network/networkInterfaces', 'TargetDC-NIC')]",
                 "[resourceId('Microsoft.Network/virtualNetworks', 'targetVnet')]"
             ],
             "properties": {
@@ -254,6 +255,8 @@
             "name": "SourceNSG",
             "location": "[parameters('SourceDeploymentZone')]",
             "dependsOn": [
+                "[resourceId('Microsoft.Network/networkInterfaces', 'SourceDC-NIC')]",
+                "[resourceId('Microsoft.Network/networkInterfaces', 'WorkstationWin11-NIC')]",
                 "[resourceId('Microsoft.Network/virtualNetworks', 'sourceVnet')]"
             ],
             "properties": {
@@ -285,9 +288,7 @@
             "name": "MigrationServ",
             "location": "[parameters('TargetDeploymentZone')]",
             "dependsOn": [
-                "[resourceId('Microsoft.Network/networkInterfaces', 'MigrationServ-NIC')]",
-                "[resourceId('Microsoft.Network/networkSecurityGroups', 'TargetNSG')]",
-                "[resourceId('Microsoft.Compute/virtualMachines/extensions', 'TargetDC', 'TargetDC-ADDS')]"
+                "[resourceId('Microsoft.Network/networkSecurityGroups', 'TargetNSG')]"
             ],
             "tags": {
                 "role": "Migration Server",
@@ -333,7 +334,6 @@
             "name": "TargetDC",
             "location": "[parameters('TargetDeploymentZone')]",
             "dependsOn": [
-                "[resourceId('Microsoft.Network/networkInterfaces', 'TargetDC-NIC')]",
                 "[resourceId('Microsoft.Network/networkSecurityGroups', 'TargetNSG')]"
             ],
             "tags": {
@@ -379,7 +379,6 @@
             "name": "SourceDC",
             "location": "[parameters('SourceDeploymentZone')]",
             "dependsOn": [
-                "[resourceId('Microsoft.Network/networkInterfaces', 'SourceDC-NIC')]",
                 "[resourceId('Microsoft.Network/networkSecurityGroups', 'SourceNSG')]"
             ],
             "tags": {
@@ -425,7 +424,6 @@
             "name": "WorkstationWin11",
             "location": "[parameters('SourceDeploymentZone')]",
             "dependsOn": [
-                "[resourceId('Microsoft.Network/networkInterfaces', 'WorkstationWin11-NIC')]",
                 "[resourceId('Microsoft.Network/networkSecurityGroups', 'SourceNSG')]"
             ],
             "tags": {
@@ -463,23 +461,6 @@
                         }
                     ]
                 }
-            }
-        },
-        {
-            "type": "Microsoft.Compute/virtualMachines/extensions",
-            "apiVersion": "2020-12-01",
-            "name": "TargetDC/TargetDC-ADDS",
-            "location": "[parameters('TargetDeploymentZone')]",
-            "dependsOn": [
-                "[resourceId('Microsoft.Compute/virtualMachines', 'TargetDC')]"
-            ],
-            "properties": {
-                "publisher": "Microsoft.Compute",
-                "type": "CustomScriptExtension",
-                "typeHandlerVersion": "1.10",
-                "autoUpgradeMinorVersion": true,
-                "settings": {},
-                "protectedSettings": {}
             }
         }
     ]
